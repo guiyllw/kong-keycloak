@@ -1,0 +1,102 @@
+version: "3.8"
+
+networks:
+  kong_net:
+  keycloak_net:
+
+services:
+  kong_db:
+    image: postgres
+    container_name: kong_db
+    environment:
+      POSTGRES_DB: kong
+      POSTGRES_USER: kong
+      POSTGRES_PASSWORD: kong
+    volumes:
+      - ./volumes/postgres/kong:/var/lib/postgresql/data
+    ports:
+      - 15432:5432
+    networks:
+      - kong_net
+    restart: always
+
+  kong:
+    # After server up run the migrations with the following command:
+    # docker-compose run --rm kong kong migrations bootstrap
+    image: guiyllw/kong:2.1-oidc
+    build:
+      context: ./docker
+      dockerfile: kong.dockerfile
+    container_name: kong
+    environment:
+      KONG_DATABASE: postgres
+      KONG_PG_HOST: kong_db
+      KONG_PG_PORT: 5432
+      KONG_PG_USER: kong
+      KONG_PG_PASSWORD: kong
+      KONG_PG_DATABASE: kong
+      KONG_PROXY_ACCESS_LOG: /dev/stdout
+      KONG_ADMIN_ACCESS_LOG: /dev/stdout
+      KONG_PROXY_ERROR_LOG: /dev/stderr
+      KONG_ADMIN_ERROR_LOG: /dev/stderr
+      KONG_PROXY_LISTEN: 0.0.0.0:8000, 0.0.0.0:8443 ssl
+      KONG_ADMIN_LISTEN: 0.0.0.0:8001, 0.0.0.0:8444 ssl
+      KONG_PLUGINS: oidc
+    ports:
+      - 8000:8000 # Listener
+      - 8001:8001 # Admin API
+      - 8443:8443 # Listener (SSL)
+      - 8444:8444 # Admin API (SSL)
+    networks:
+      - kong_net
+    restart: always
+
+  konga:
+    image: pantsel/konga
+    container_name: konga
+    environment:
+      NODE_ENV: production
+      TOKEN_SECRET: s3cr37
+      KONGA_DB_NAME: konga_db
+      KONGA_DB_HOST: kong_db
+      KONGA_DB_PORT: 5432
+      KONGA_DB_USERNAME: kong
+      KONGA_DB_PASSWORD: kong
+    ports:
+      - 1337:1337
+    networks:
+      - kong_net
+    restart: always
+
+  keycloak_db:
+    image: postgres
+    container_name: keycloak_db
+    environment:
+      POSTGRES_DB: keycloak
+      POSTGRES_USER: keycloak
+      POSTGRES_PASSWORD: keycloak
+    volumes:
+      - ./volumes/postgres/keycloak:/var/lib/postgresql/data
+    ports:
+      - 25432:5432
+    networks:
+      - keycloak_net
+    restart: always
+
+  keycloak:
+    # After server up add a admin user with the following command then restart the server:
+    # docker exec keycloak /opt/jboss/keycloak/bin/add-user-keycloak.sh -u admin -p admin
+    image: quay.io/keycloak/keycloak
+    container_name: keycloak
+    environment:
+      DB_VENDOR: POSTGRES
+      DB_ADDR: keycloak_db
+      DB_PORT: 5432
+      DB_DATABASE: keycloak
+      DB_USER: keycloak
+      DB_PASSWORD: keycloak
+    ports:
+      - 8080:8080
+    networks:
+      - keycloak_net
+    restart: always
